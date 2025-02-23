@@ -14,10 +14,6 @@ enum OutputFormat {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Output format (text or json)
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-    output: OutputFormat,
-
     #[command(subcommand)]
     command: Commands,
 }
@@ -29,6 +25,18 @@ enum Commands {
         /// Show all found IDE paths even if no log file is present
         #[arg(short, long)]
         verbose: bool,
+        /// Output format (text or json)
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output: OutputFormat,
+    },
+    /// Show configuration details for a specific IDE
+    Config {
+        /// Name of the IDE (e.g. "IntelliJIdea2024.3")
+        #[arg(long)]
+        name: String,
+        /// Output format (text or json)
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output: OutputFormat,
     },
 }
 
@@ -212,13 +220,37 @@ fn output_ides(format: OutputFormat, ides: Vec<IdeInfo>, verbose: bool) -> Resul
     Ok(())
 }
 
+fn output_ide_config(format: OutputFormat, ide: IdeInfo) -> Result<()> {
+    match format {
+        OutputFormat::Text => {
+            println!("Configuration for {}:", ide.name);
+            println!("  Install directory: {}", ide.install_dir.display());
+            println!("  Config directory: {}", ide.config_dir.display());
+            println!("  Logs directory: {}", ide.logs_dir.display());
+        }
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&JsonOutput {
+                data: ide
+            })?)
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::List { verbose } => {
+        Commands::List { verbose, output } => {
             let ides = find_ide_installations()?;
-            output_ides(cli.output, ides, verbose)?
+            output_ides(output, ides, verbose)?
+        }
+        Commands::Config { name, output } => {
+            let ides = find_ide_installations()?;
+            let ide = ides.into_iter()
+                .find(|ide| ide.name == name)
+                .ok_or_else(|| anyhow::anyhow!("IDE '{}' not found", name))?;
+            output_ide_config(output, ide)?
         }
     }
 
