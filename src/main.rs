@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use home::home_dir;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -54,6 +54,7 @@ struct IdeInfo {
     install_dir: PathBuf,
     #[serde(serialize_with = "serialize_path")]
     config_dir: PathBuf,
+    vmoptions: Option<Vec<String>>,
 }
 
 // Custom serializer for PathBuf to ensure it's always a string in JSON
@@ -73,6 +74,23 @@ fn get_jetbrains_base_path() -> Option<PathBuf> {
         // Linux
         home_dir().map(|h| h.join(".cache/JetBrains"))
     }
+}
+
+fn read_vmoptions(config_dir: &Path, name: &str) -> Option<Vec<String>> {
+    let vmoptions_file = config_dir.join(format!("{}.vmoptions", name));
+    if !vmoptions_file.exists() {
+        return None;
+    }
+
+    std::fs::read_to_string(vmoptions_file)
+        .ok()
+        .map(|content| {
+            content
+                .lines()
+                .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
+                .map(String::from)
+                .collect()
+        })
 }
 
 fn find_ide_config_dir(name: &str) -> PathBuf {
@@ -169,11 +187,15 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
             path.join("log")
         };
 
+        let config_dir = find_ide_config_dir(&dir_name);
+        let vmoptions = read_vmoptions(&config_dir, &dir_name);
+        
         ides.push(IdeInfo {
             name: dir_name.clone(),
             logs_dir,
             install_dir: find_ide_install_dir(&app_name),
-            config_dir: find_ide_config_dir(&dir_name),
+            config_dir,
+            vmoptions,
         });
     }
 
@@ -227,6 +249,14 @@ fn output_ide_config(format: OutputFormat, ide: IdeInfo) -> Result<()> {
             println!("  Install directory: {}", ide.install_dir.display());
             println!("  Config directory: {}", ide.config_dir.display());
             println!("  Logs directory: {}", ide.logs_dir.display());
+            if let Some(vmoptions) = ide.vmoptions {
+                println!("  VM Options:");
+                for opt in vmoptions {
+                    println!("    {}", opt);
+                }
+            } else {
+                println!("  VM Options: Not found");
+            }
         }
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&JsonOutput {
