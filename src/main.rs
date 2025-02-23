@@ -1,12 +1,23 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use home::home_dir;
+use serde::Serialize;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Output format (text or json)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    output: OutputFormat,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -21,11 +32,28 @@ enum Commands {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+struct JsonOutput<T> {
+    data: T,
+}
+
+#[derive(Debug, Serialize)]
 struct IdeInfo {
     name: String,
-    path: PathBuf,
-    has_log: bool,
+    #[serde(serialize_with = "serialize_path")]
+    logs_dir: PathBuf,
+    #[serde(serialize_with = "serialize_path")]
+    install_dir: PathBuf,
+    #[serde(serialize_with = "serialize_path")]
+    config_dir: PathBuf,
+}
+
+// Custom serializer for PathBuf to ensure it's always a string in JSON
+fn serialize_path<S>(path: &PathBuf, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&path.display().to_string())
 }
 
 fn get_jetbrains_base_path() -> Option<PathBuf> {
@@ -37,6 +65,69 @@ fn get_jetbrains_base_path() -> Option<PathBuf> {
         // Linux
         home_dir().map(|h| h.join(".cache/JetBrains"))
     }
+}
+
+fn find_ide_config_dir(name: &str) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home_dir().unwrap_or_default()
+            .join("Library/Application Support/JetBrains")
+            .join(name)
+    } else if cfg!(target_os = "windows") {
+        PathBuf::from("%APPDATA%")
+            .join("JetBrains")
+            .join(name)
+    } else {
+        // Linux
+        home_dir().unwrap_or_default()
+            .join(".config/JetBrains")
+            .join(name)
+    }
+}
+
+fn find_ide_install_dir(name: &str) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        // Check common installation paths on macOS
+        let app_name = if name.ends_with(".app") {
+            name.to_string()
+        } else {
+            format!("{}.app", name)
+        };
+        
+        let paths = [
+            PathBuf::from("/Applications").join(&app_name),
+            home_dir().unwrap_or_default().join("Applications").join(&app_name),
+        ];
+
+        for path in paths {
+            if path.exists() {
+                return path;
+            }
+        }
+        
+        // Return the standard /Applications path even if not found
+        PathBuf::from("/Applications").join(app_name)
+    } else if cfg!(target_os = "windows") {
+        // Default to Program Files on Windows
+        PathBuf::from(r"C:\Program Files\JetBrains").join(name)
+    } else {
+        // Default to opt on Linux
+        PathBuf::from("/opt/jetbrains").join(name)
+    }
+}
+
+fn map_log_dir_to_app_name(dir_name: &str) -> String {
+    match dir_name {
+        "IntelliJIdea2024.3" => "IntelliJ IDEA",
+        "WebStorm2024.3" => "WebStorm",
+        "RustRover2024.3" => "RustRover",
+        "CLion2024.3" => "CLion",
+        "PyCharm2024.3" => "PyCharm",
+        "GoLand2024.3" => "GoLand",
+        "PhpStorm2024.3" => "PhpStorm",
+        "Rider2024.3" => "Rider",
+        "DataGrip2024.3" => "DataGrip",
+        _ => dir_name,
+    }.to_string()
 }
 
 fn find_ide_installations() -> Result<Vec<IdeInfo>> {
@@ -56,29 +147,69 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
         }
 
         let path = entry.path();
-        let name = path
+        let dir_name = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
+            
+        let app_name = map_log_dir_to_app_name(&dir_name);
 
-        // Check if this is a valid IDE directory (contains idea.log or will contain it)
-        let log_path = if cfg!(target_os = "macos") {
+        let logs_dir = if cfg!(target_os = "macos") {
             path.to_path_buf()
         } else {
             path.join("log")
         };
 
-        let has_log = log_path.join("idea.log").exists();
-
         ides.push(IdeInfo {
-            name,
-            path: path.to_path_buf(),
-            has_log,
+            name: dir_name.clone(),
+            logs_dir,
+            install_dir: find_ide_install_dir(&app_name),
+            config_dir: find_ide_config_dir(&dir_name),
         });
     }
 
     Ok(ides)
+}
+
+fn output_ides(format: OutputFormat, ides: Vec<IdeInfo>, verbose: bool) -> Result<()> {
+    let filtered_ides = if verbose {
+        ides
+    } else {
+        ides.into_iter()
+            .filter(|ide| ide.logs_dir.join("idea.log").exists())
+            .collect()
+    };
+
+    if filtered_ides.is_empty() {
+        match format {
+            OutputFormat::Text => println!("No JetBrains IDEs found"),
+            OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&JsonOutput {
+                data: Vec::<IdeInfo>::new()
+            })?),
+        }
+        return Ok(());
+    }
+
+    match format {
+        OutputFormat::Text => {
+            println!("Found JetBrains IDEs:");
+            for ide in filtered_ides {
+                println!(
+                    "{}: {}",
+                    ide.name,
+                    ide.install_dir.display()
+                );
+            }
+        }
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&JsonOutput {
+                data: filtered_ides
+            })?)
+        }
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -87,23 +218,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::List { verbose } => {
             let ides = find_ide_installations()?;
-
-            if ides.is_empty() {
-                println!("No JetBrains IDEs found");
-                return Ok(());
-            }
-
-            println!("Found JetBrains IDEs:");
-            for ide in ides {
-                if verbose || ide.has_log {
-                    println!(
-                        "{}: {}{}",
-                        ide.name,
-                        ide.path.display(),
-                        if !ide.has_log { " (no log file present)" } else { "" }
-                    );
-                }
-            }
+            output_ides(cli.output, ides, verbose)?
         }
     }
 
