@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use home::home_dir;
 use serde::Serialize;
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -56,6 +57,7 @@ struct IdeInfo {
     config_dir: PathBuf,
     vmoptions: Option<Vec<String>>,
     port: Option<u16>,
+    running: bool,
 }
 
 // Custom serializer for PathBuf to ensure it's always a string in JSON
@@ -174,6 +176,10 @@ fn get_product_info(dir_name: &str) -> (String, String) {
     (display_name.to_string(), vmoptions_prefix.to_lowercase())
 }
 
+fn is_port_in_use(port: u16) -> bool {
+    TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
+}
+
 fn find_ide_installations() -> Result<Vec<IdeInfo>> {
     let base_path = get_jetbrains_base_path()
         .context("Could not determine JetBrains base path")?;
@@ -211,6 +217,8 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
         let port = vmoptions.as_ref()
             .and_then(|opts| get_port_file_path(opts))
             .and_then(|port_file| read_port_from_file(&port_file));
+            
+        let running = port.map(|p| is_port_in_use(p)).unwrap_or(false);
         
         ides.push(IdeInfo {
             name: dir_name.clone(),
@@ -219,6 +227,7 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
             config_dir,
             vmoptions,
             port,
+            running,
         });
     }
 
@@ -285,6 +294,7 @@ fn output_ide_config(format: OutputFormat, ide: IdeInfo) -> Result<()> {
             } else {
                 println!("  Port: Not found");
             }
+            println!("  Running: {}", if ide.running { "Yes" } else { "No" });
         }
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&JsonOutput {
