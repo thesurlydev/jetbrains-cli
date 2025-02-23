@@ -55,6 +55,7 @@ struct IdeInfo {
     #[serde(serialize_with = "serialize_path")]
     config_dir: PathBuf,
     vmoptions: Option<Vec<String>>,
+    port: Option<u16>,
 }
 
 // Custom serializer for PathBuf to ensure it's always a string in JSON
@@ -74,6 +75,21 @@ fn get_jetbrains_base_path() -> Option<PathBuf> {
         // Linux
         home_dir().map(|h| h.join(".cache/JetBrains"))
     }
+}
+
+fn read_port_from_file(port_file: &Path) -> Option<u16> {
+    std::fs::read_to_string(port_file)
+        .ok()
+        .and_then(|content| content.trim().parse().ok())
+}
+
+fn get_port_file_path(vmoptions: &[String]) -> Option<PathBuf> {
+    vmoptions.iter()
+        .find(|line| line.starts_with("-Dtoolbox.notification.portFile="))
+        .map(|line| {
+            let path = line.trim_start_matches("-Dtoolbox.notification.portFile=");
+            PathBuf::from(path)
+        })
 }
 
 fn read_vmoptions(config_dir: &Path, name: &str) -> Option<Vec<String>> {
@@ -192,12 +208,17 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
         let config_dir = find_ide_config_dir(&dir_name);
         let vmoptions = read_vmoptions(&config_dir, &dir_name);
         
+        let port = vmoptions.as_ref()
+            .and_then(|opts| get_port_file_path(opts))
+            .and_then(|port_file| read_port_from_file(&port_file));
+        
         ides.push(IdeInfo {
             name: dir_name.clone(),
             logs_dir,
             install_dir: find_ide_install_dir(&app_name),
             config_dir,
             vmoptions,
+            port,
         });
     }
 
@@ -258,6 +279,11 @@ fn output_ide_config(format: OutputFormat, ide: IdeInfo) -> Result<()> {
                 }
             } else {
                 println!("  VM Options: Not found");
+            }
+            if let Some(port) = ide.port {
+                println!("  Port: {}", port);
+            } else {
+                println!("  Port: Not found");
             }
         }
         OutputFormat::Json => {
