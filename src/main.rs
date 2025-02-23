@@ -42,7 +42,7 @@ enum Commands {
 
 #[derive(Debug, Serialize)]
 struct JsonOutput<T> {
-    data: T,
+    tools: T,
 }
 
 #[derive(Debug, Serialize)]
@@ -238,7 +238,7 @@ fn output_ides(format: OutputFormat, ides: Vec<IdeInfo>, verbose: bool) -> Resul
         match format {
             OutputFormat::Text => println!("No JetBrains IDEs found"),
             OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&JsonOutput {
-                data: Vec::<IdeInfo>::new()
+                tools: Vec::<IdeInfo>::new()
             })?),
         }
         return Ok(());
@@ -257,7 +257,7 @@ fn output_ides(format: OutputFormat, ides: Vec<IdeInfo>, verbose: bool) -> Resul
         }
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&JsonOutput {
-                data: filtered_ides
+                tools: filtered_ides
             })?)
         }
     }
@@ -288,7 +288,7 @@ fn output_ide_config(format: OutputFormat, ide: IdeInfo) -> Result<()> {
         }
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&JsonOutput {
-                data: ide
+                tools: ide
             })?)
         }
     }
