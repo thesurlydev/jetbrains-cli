@@ -1,0 +1,15 @@
+[package]
+name = "jetbrains-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "jb"
+path = "src/main.rs"
+
+
+[dependencies]
+clap = { version = "4.5.1", features = ["derive"] }
+home = "0.5.9"
+walkdir = "2.4.0"
+anyhow = "1.0.79"
