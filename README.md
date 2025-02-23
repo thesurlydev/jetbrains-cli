@@ -1,10 +1,10 @@
 # JetBrains CLI
 
-A command-line tool for managing JetBrains IDEs. It helps you:
+A command-line tool for querying information about installed JetBrains IDEs. It helps you:
 
-1. List installed IDE instances
-2. Check which IDEs are currently running
-3. Get configuration details including ports and VM options
+* List installed IDE instances
+* Check which IDEs are currently running
+* Get configuration details including ports and VM options
 
 ## Usage
 
