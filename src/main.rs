@@ -77,7 +77,8 @@ fn get_jetbrains_base_path() -> Option<PathBuf> {
 }
 
 fn read_vmoptions(config_dir: &Path, name: &str) -> Option<Vec<String>> {
-    let vmoptions_file = config_dir.join(format!("{}.vmoptions", name));
+    let (_, vmoptions_prefix) = get_product_info(name);
+    let vmoptions_file = config_dir.join(format!("{}.vmoptions", vmoptions_prefix));
     if !vmoptions_file.exists() {
         return None;
     }
@@ -141,19 +142,20 @@ fn find_ide_install_dir(name: &str) -> PathBuf {
     }
 }
 
-fn map_log_dir_to_app_name(dir_name: &str) -> String {
-    match dir_name {
-        "IntelliJIdea2024.3" => "IntelliJ IDEA",
-        "WebStorm2024.3" => "WebStorm",
-        "RustRover2024.3" => "RustRover",
-        "CLion2024.3" => "CLion",
-        "PyCharm2024.3" => "PyCharm",
-        "GoLand2024.3" => "GoLand",
-        "PhpStorm2024.3" => "PhpStorm",
-        "Rider2024.3" => "Rider",
-        "DataGrip2024.3" => "DataGrip",
-        _ => dir_name,
-    }.to_string()
+fn get_product_info(dir_name: &str) -> (String, String) {
+    let (display_name, vmoptions_prefix) = match dir_name {
+        name if name.starts_with("IntelliJIdea") => ("IntelliJ IDEA", "idea"),
+        name if name.starts_with("WebStorm") => ("WebStorm", "webstorm"),
+        name if name.starts_with("RustRover") => ("RustRover", "rustrover"),
+        name if name.starts_with("CLion") => ("CLion", "clion"),
+        name if name.starts_with("PyCharm") => ("PyCharm", "pycharm"),
+        name if name.starts_with("GoLand") => ("GoLand", "goland"),
+        name if name.starts_with("PhpStorm") => ("PhpStorm", "phpstorm"),
+        name if name.starts_with("Rider") => ("Rider", "rider"),
+        name if name.starts_with("DataGrip") => ("DataGrip", "datagrip"),
+        _ => (dir_name, dir_name),
+    };
+    (display_name.to_string(), vmoptions_prefix.to_lowercase())
 }
 
 fn find_ide_installations() -> Result<Vec<IdeInfo>> {
@@ -179,7 +181,7 @@ fn find_ide_installations() -> Result<Vec<IdeInfo>> {
             .unwrap_or("")
             .to_string();
             
-        let app_name = map_log_dir_to_app_name(&dir_name);
+        let (app_name, _) = get_product_info(&dir_name);
 
         let logs_dir = if cfg!(target_os = "macos") {
             path.to_path_buf()
